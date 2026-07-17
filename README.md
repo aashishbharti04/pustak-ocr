@@ -2,9 +2,16 @@
 
 Local tool for turning scanned Devanagari books into clean text: upload a PDF, get a
 page-by-page OCR draft, correct it in a browser with the scan and the text side by side,
-export DOCX or TXT.
+export DOCX, EPUB, or TXT.
 
-Everything runs on your machine. No page images or text leave it.
+Everything runs on your machine. No page images or text leave it — except the pages you
+explicitly send to Claude for suggestions, if you enable that.
+
+**[Project page →](https://aashishbharti04.github.io/pustak-ocr/)**
+
+> This is a localhost tool with **no authentication**. Don't deploy it to a public host:
+> anyone who found the URL could upload to your disk and, if `ANTHROPIC_API_KEY` were set
+> there, spend your Claude credits via the suggest endpoint.
 
 ## Install
 

@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pustak-OCR — Devanagari book OCR with human-gated AI suggestions</title>
+<meta name="description" content="Local tool for turning scanned Hindi books into clean text. Correct OCR side-by-side with the page image; Claude reads the scan and suggests span-anchored fixes you accept or reject.">
+<style>
+  :root {
+    --bg: #fbfaf7; --panel: #fff; --line: #e2ddd3; --text: #1c1a17;
+    --muted: #6d675e; --accent: #9c4221; --ok: #2f7a52; --warn: #a8730f; --err: #a33a30;
+    --code-bg: #f4f1ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14161a; --panel: #1b1e24; --line: #2c313b; --text: #e6e8ec;
+      --muted: #969ca8; --accent: #e0834f; --ok: #62b884; --warn: #e0a33a; --err: #e06c6c;
+      --code-bg: #12141a;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #14161a; --panel: #1b1e24; --line: #2c313b; --text: #e6e8ec;
+    --muted: #969ca8; --accent: #e0834f; --ok: #62b884; --warn: #e0a33a; --err: #e06c6c;
+    --code-bg: #12141a;
+  }
+  :root[data-theme="light"] {
+    --bg: #fbfaf7; --panel: #fff; --line: #e2ddd3; --text: #1c1a17;
+    --muted: #6d675e; --accent: #9c4221; --ok: #2f7a52; --warn: #a8730f; --err: #a33a30;
+    --code-bg: #f4f1ea;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.65 -apple-system, "Segoe UI", system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 0 20px 80px; }
+  a { color: var(--accent); }
+  code, pre { font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+  code { background: var(--code-bg); padding: 1px 5px; border-radius: 4px; font-size: .88em; }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px 16px; overflow-x: auto; font-size: 13.5px; line-height: 1.6;
+  }
+  pre code { background: none; padding: 0; font-size: inherit; }
+  .dev { font-family: "Nirmala UI", "Noto Sans Devanagari", serif; }
+
+  header { padding: 72px 0 40px; border-bottom: 1px solid var(--line); margin-bottom: 44px; }
+  h1 { font-size: 40px; margin: 0 0 6px; letter-spacing: -.02em; }
+  h1 .dev { color: var(--accent); }
+  .tagline { font-size: 19px; color: var(--muted); margin: 0 0 26px; max-width: 56ch; }
+  .cta { display: flex; gap: 10px; flex-wrap: wrap; }
+  .btn {
+    display: inline-block; padding: 9px 17px; border-radius: 7px; text-decoration: none;
+    font-weight: 600; font-size: 14.5px; background: var(--accent); color: var(--bg);
+    border: 1px solid var(--accent);
+  }
+  .btn.ghost { background: transparent; color: var(--text); border-color: var(--line); }
+
+  h2 { font-size: 24px; margin: 46px 0 14px; letter-spacing: -.01em; }
+  h3 { font-size: 17px; margin: 28px 0 8px; }
+  p { margin: 0 0 14px; }
+  ul { padding-left: 22px; margin: 0 0 14px; }
+  li { margin-bottom: 7px; }
+  .muted { color: var(--muted); }
+
+  .lede {
+    font-size: 17px; border-left: 3px solid var(--accent);
+    padding-left: 18px; margin: 0 0 22px; color: var(--text);
+  }
+
+  figure { margin: 0 0 20px; }
+  figure svg { display: block; width: 100%; height: auto; }
+  figcaption { font-size: 13.5px; color: var(--muted); margin-top: 8px; }
+
+  .callout {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 10px; padding: 18px 20px; margin: 0 0 20px;
+  }
+  .callout.warn { border-color: var(--warn); }
+  .callout h3 { margin-top: 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 0 0 18px; font-size: 14.5px; display: block; overflow-x: auto; }
+  th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+
+  .sugg-demo {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; margin: 0 0 8px;
+  }
+  .sugg-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 7px 0; }
+  .sugg-row + .sugg-row { border-top: 1px solid var(--line); }
+  .was { color: var(--err); text-decoration: line-through; font-size: 17px; }
+  .now { color: var(--ok); font-size: 17px; }
+  .arrow { color: var(--muted); }
+  .pill {
+    font-size: 11px; padding: 2px 8px; border-radius: 20px; border: 1px solid var(--line);
+    color: var(--muted); text-transform: uppercase; letter-spacing: .04em;
+  }
+  .pill.high { border-color: var(--ok); color: var(--ok); }
+  .pill.killed { border-color: var(--err); color: var(--err); }
+  .reason { font-size: 13.5px; color: var(--muted); }
+
+  footer {
+    margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--line);
+    font-size: 14px; color: var(--muted);
+  }
+  .theme-toggle {
+    position: fixed; top: 14px; right: 14px; background: var(--panel);
+    border: 1px solid var(--line); color: var(--muted); border-radius: 7px;
+    padding: 5px 10px; font: inherit; font-size: 13px; cursor: pointer;
+  }
+  @media (max-width: 600px) {
+    h1 { font-size: 31px; } .tagline { font-size: 17px; } header { padding-top: 48px; }
+  }
+</style>
+</head>
+<body>
+<button class="theme-toggle" id="theme">◐</button>
+
+<div class="wrap">
+<header>
+  <h1><span class="dev">पुस्तक</span> Pustak-OCR</h1>
+  <p class="tagline">
+    Turn a scanned Hindi book into clean text. OCR does the first pass, Claude reads the
+    scan and points at what looks wrong, and you stay the one who decides.
+  </p>
+  <div class="cta">
+    <a class="btn" href="https://github.com/aashishbharti04/pustak-ocr">View on GitHub</a>
+    <a class="btn ghost" href="#design">Why it suggests instead of rewrites</a>
+  </div>
+</header>
+
+<p class="lede">
+  Devanagari OCR is good enough to save you most of the typing and bad enough that you
+  still have to read every page. Pustak-OCR is built around that fact rather than
+  pretending otherwise.
+</p>
+
+<p>
+  Upload a scanned PDF. Each page is rendered at 300 DPI, deskewed, and run through
+  Tesseract. You then work through the book in a split-screen review UI — the scan on the
+  left, an editable text box on the right — and export to DOCX, EPUB, or plain text when
+  you're done. Everything runs on your own machine; no page images or text leave it.
+</p>
+
+<h2>The pipeline</h2>
+
+<figure>
+<svg viewBox="0 0 720 260" xmlns="http://www.w3.org/2000/svg" role="img"
+     aria-label="Pipeline: PDF renders to page images, which are deskewed and denoised, then OCR'd by Tesseract into SQLite. The review UI reads from SQLite and sends the page image plus OCR text to Claude, which returns span suggestions the human accepts or rejects. Export produces DOCX, EPUB, or TXT.">
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+    </marker>
+    <style>
+      .bx { fill: var(--panel); stroke: var(--line); }
+      .ln { stroke: var(--muted); stroke-width: 1.4; fill: none; marker-end: url(#a); color: var(--muted); }
+      .tx { fill: var(--text); font: 600 12px system-ui, sans-serif; }
+      .sb { fill: var(--muted); font: 11px system-ui, sans-serif; }
+      .ac { stroke: var(--accent); color: var(--accent); }
+      .acbx { fill: var(--panel); stroke: var(--accent); }
+    </style>
+  </defs>
+
+  <rect class="bx" x="4"   y="16" width="104" height="44" rx="7"/>
+  <text class="tx" x="56"  y="35" text-anchor="middle">PDF</text>
+  <text class="sb" x="56"  y="50" text-anchor="middle">scanned book</text>
+
+  <rect class="bx" x="140" y="16" width="120" height="44" rx="7"/>
+  <text class="tx" x="200" y="35" text-anchor="middle">Page images</text>
+  <text class="sb" x="200" y="50" text-anchor="middle">PyMuPDF, 300 DPI</text>
+
+  <rect class="bx" x="292" y="16" width="130" height="44" rx="7"/>
+  <text class="tx" x="357" y="35" text-anchor="middle">Deskew + denoise</text>
+  <text class="sb" x="357" y="50" text-anchor="middle">OpenCV</text>
+
+  <rect class="bx" x="454" y="16" width="120" height="44" rx="7"/>
+  <text class="tx" x="514" y="35" text-anchor="middle">Tesseract</text>
+  <text class="sb" x="514" y="50" text-anchor="middle">hin, --psm 6</text>
+
+  <rect class="bx" x="606" y="16" width="104" height="44" rx="7"/>
+  <text class="tx" x="658" y="35" text-anchor="middle">SQLite</text>
+  <text class="sb" x="658" y="50" text-anchor="middle">raw + edits</text>
+
+  <line class="ln" x1="110" y1="38" x2="136" y2="38"/>
+  <line class="ln" x1="262" y1="38" x2="288" y2="38"/>
+  <line class="ln" x1="424" y1="38" x2="450" y2="38"/>
+  <line class="ln" x1="576" y1="38" x2="602" y2="38"/>
+
+  <path class="ln" d="M658 62 L658 96 L392 96"/>
+
+  <rect class="bx" x="252" y="106" width="140" height="48" rx="7"/>
+  <text class="tx" x="322" y="126" text-anchor="middle">Review UI</text>
+  <text class="sb" x="322" y="141" text-anchor="middle">scan | editor</text>
+
+  <rect class="acbx" x="470" y="106" width="150" height="48" rx="7"/>
+  <text class="tx" x="545" y="126" text-anchor="middle">Claude</text>
+  <text class="sb" x="545" y="141" text-anchor="middle">reads the scan</text>
+
+  <path class="ln ac" d="M394 122 L466 122"/>
+  <text class="sb" x="430" y="115" text-anchor="middle" fill="currentColor">image + text</text>
+  <path class="ln ac" d="M466 140 L398 140"/>
+  <text class="sb" x="432" y="153" text-anchor="middle">suggestions</text>
+
+  <path class="ln" d="M322 158 L322 190"/>
+  <rect class="bx" x="228" y="196" width="188" height="44" rx="7"/>
+  <text class="tx" x="322" y="215" text-anchor="middle">You accept or reject</text>
+  <text class="sb" x="322" y="230" text-anchor="middle">nothing applies until you click</text>
+
+  <path class="ln" d="M418 218 L560 218"/>
+  <rect class="bx" x="566" y="196" width="144" height="44" rx="7"/>
+  <text class="tx" x="638" y="215" text-anchor="middle">DOCX · EPUB · TXT</text>
+  <text class="sb" x="638" y="230" text-anchor="middle">python-docx, ebooklib</text>
+</svg>
+<figcaption>
+  Raw OCR is stored separately from your corrections and is never overwritten — you can
+  always see what Tesseract actually produced.
+</figcaption>
+</figure>
+
+<h2 id="design">Why it suggests instead of rewrites</h2>
+
+<p>
+  The obvious thing to build is: OCR the page, hand the text to an LLM, ask it to fix the
+  mistakes, keep the output. That version is worse than useless, and it's worth being
+  precise about why.
+</p>
+
+<p>
+  An LLM told <em>"fix the OCR errors, don't rewrite"</em> will do exactly that about 95%
+  of the time. The problem is the other 5%. On a word it genuinely cannot recover, it
+  doesn't fail loudly — it emits a <strong>different plausible Hindi word that fits the
+  sentence.</strong>
+</p>
+
+<p>
+  That asymmetry is the whole problem. A raw OCR error looks like garbage
+  (<span class="dev" style="color:var(--err)">रामप्रसाट</span>) and your eye snags on it. An
+  LLM's error looks like prose, and your eye slides straight over it. Over 282 pages you
+  will not catch them, and you'll have no way to know which pages were touched.
+  <strong>An unsupervised LLM pass converts visible errors into invisible ones.</strong>
+</p>
+
+<p>So the model never produces the document. Two mechanisms enforce that:</p>
+
+<h3>1. It sees the page</h3>
+<p>
+  The scan goes with the text on every request. A model that can't see the page can only
+  guess fluently at a damaged matra; one that can is actually reading it. Every suggestion
+  has to be justified by what is visibly printed — not by what reads well.
+</p>
+
+<h3>2. Every span must be anchored</h3>
+<p>
+  Each suggestion names an <code>original</code> span that must occur <em>verbatim</em> in
+  the OCR text. If it doesn't, the suggestion is discarded server-side before you ever see
+  it. A span the model invented cannot be located, so it cannot be applied — fabrication
+  fails closed.
+</p>
+
+<div class="sugg-demo">
+  <div class="sugg-row">
+    <span class="was dev">रामप्रसाट</span><span class="arrow">→</span><span class="now dev">रामप्रसाद</span>
+    <span class="pill high">kept</span>
+    <span class="reason">final consonant is <span class="dev">द</span>, not <span class="dev">ट</span></span>
+  </div>
+  <div class="sugg-row">
+    <span class="was dev">मंदिर की घंटी</span><span class="arrow">→</span><span class="now dev">मन्दिर की घंटी</span>
+    <span class="pill killed">discarded</span>
+    <span class="reason">span isn't in the OCR text — the model invented it</span>
+  </div>
+</div>
+<p class="muted" style="font-size:13.5px">
+  The panel reports how many it dropped. A count that's consistently above zero is a
+  signal to distrust that page's suggestions — not to ignore the counter.
+</p>
+
+<div class="callout">
+  <h3>The point isn't correction, it's attention</h3>
+  <p style="margin:0">
+    Reviewing eight flagged words takes about thirty seconds. Reading a whole page takes
+    about four minutes. Across a book that's the difference between an evening and a
+    fortnight — and it never requires trusting the model with your text, only with
+    pointing.
+  </p>
+</div>
+
+<h2>A note on preprocessing</h2>
+<p>
+  Most OCR tutorials tell you to binarize and sharpen. Here binarization is
+  <strong>off by default</strong>, deliberately. Tesseract binarizes internally (Otsu), and
+  handing it a pre-binarized page usually makes Devanagari <em>worse</em> — adaptive
+  thresholding eats the shirorekha and thins the matras, which is exactly the detail you
+  can't afford to lose. Sharpening amplifies JPEG ringing into artifacts shaped like
+  matras. The default is grayscale → denoise → deskew; binarization is a checkbox for
+  genuinely bad scans.
+</p>
+<p>
+  Deskew uses a projection profile rather than Hough lines, which suits the script: the
+  shirorekha makes every text line a strong horizontal bar, so row variance peaks sharply
+  at the true angle. On synthetic pages it recovers ±6° to within 0.01°.
+</p>
+
+<h2>Setup</h2>
+<pre><code>git clone https://github.com/aashishbharti04/pustak-ocr
+cd pustak-ocr
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m uvicorn pustak_ocr.app:app --port 8077</code></pre>
+
+<p>
+  Tesseract is a separate binary — install it with the <strong>Hindi (<code>hin</code>)
+  language data</strong>, or OCR won't start. The Claude panel needs
+  <code>ANTHROPIC_API_KEY</code>; without it everything else still works. The home page
+  tells you exactly what's missing.
+</p>
+
+<table>
+  <thead><tr><th>Key</th><th>Action</th></tr></thead>
+  <tbody>
+    <tr><td><code>Ctrl+S</code></td><td>save</td></tr>
+    <tr><td><code>Ctrl+Enter</code></td><td>save, mark reviewed, next page</td></tr>
+    <tr><td><code>Alt+←</code> / <code>Alt+→</code></td><td>previous / next page</td></tr>
+  </tbody>
+</table>
+
+<h2>Honest limitations</h2>
+
+<div class="callout warn">
+  <h3>Two paths are unverified</h3>
+  <p style="margin:0">
+    Neither Tesseract nor Claude credentials were available on the machine this was built
+    on, so the <strong>Tesseract <code>hin</code> recognition call</strong> and the
+    <strong>live Claude request</strong> have never been run for real. Everything around
+    them is tested — render, preprocess, database, review UI, exports, the anchoring
+    guard, the error paths. But the two steps that do the actual recognition are unproven.
+    Your first real run is the first real test.
+  </p>
+</div>
+
+<ul>
+  <li><strong>Single-column prose only.</strong> No tables, figures, or footnotes — a novel, not a textbook.</li>
+  <li><strong>One OCR engine.</strong> No second engine to cross-check. Engine disagreement would be a strong, free attention signal; it isn't built.</li>
+  <li><strong>Single-core OCR.</strong> One worker thread per book. Fine unattended; a pool would be much faster.</li>
+  <li><strong>No authentication.</strong> Bind to localhost. This is a local tool and should stay one.</li>
+  <li><strong>Cost.</strong> Roughly $0.03–0.08 per page for the Claude pass — an estimate, not a measurement. Run ten pages and check your bill.</li>
+</ul>
+
+<h2>Rights</h2>
+<p>
+  The tool doesn't care what you feed it; you should. Digitizing a full book is
+  reproduction whether OCR or a keyboard does the typing. Use it on your own manuscripts,
+  public-domain texts, or works you have permission to copy.
+</p>
+
+<footer>
+  <p style="margin:0">
+    MIT-spirited, use it how you like ·
+    <a href="https://github.com/aashishbharti04/pustak-ocr">source on GitHub</a> ·
+    built with <a href="https://claude.com/claude-code">Claude Code</a>
+  </p>
+</footer>
+</div>
+
+<script>
+  const root = document.documentElement;
+  const btn = document.getElementById('theme');
+  btn.addEventListener('click', () => {
+    const dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    const now = root.dataset.theme || (dark ? 'dark' : 'light');
+    root.dataset.theme = now === 'dark' ? 'light' : 'dark';
+  });
+</script>
+</body>
+</html>

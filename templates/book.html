@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ book.title }} — Pustak-OCR{% endblock %}
+{% block content %}
+
+<h1>{{ book.title }}</h1>
+{% if book.author %}<p class="muted">{{ book.author }}</p>{% endif %}
+
+{% include "_progress.html" %}
+
+<p class="actions">
+  {% if progress.total %}
+    <a class="button" href="/books/{{ book.id }}/pages/1">Start reviewing</a>
+  {% endif %}
+  <a class="button ghost" href="/books/{{ book.id }}/export.docx">Export DOCX</a>
+  <a class="button ghost" href="/books/{{ book.id }}/export.epub">Export EPUB</a>
+  <a class="button ghost" href="/books/{{ book.id }}/export.txt">Export TXT</a>
+  {% if book.status == 'failed' %}
+    <form method="post" action="/books/{{ book.id }}/retry" class="inline">
+      <button type="submit">Retry OCR</button>
+    </form>
+  {% endif %}
+</p>
+
+<h2>Pages</h2>
+<p class="muted">Pages below {{ low_conf }}% confidence are flagged — review those first.</p>
+<div class="pagegrid">
+  {% for p in pages %}
+    <a class="chip {{ p.status }}{% if p.ocr_confidence is not none and p.ocr_confidence < low_conf %} lowconf{% endif %}"
+       href="/books/{{ book.id }}/pages/{{ p.page_number }}"
+       title="{% if p.ocr_confidence is not none %}{{ p.ocr_confidence }}% confidence{% else %}not OCR'd yet{% endif %}">
+      {{ p.page_number }}
+    </a>
+  {% endfor %}
+</div>
+
+<script>
+  const poll = setInterval(async () => {
+    const res = await fetch(`/books/{{ book.id }}/progress`);
+    if (!res.ok) return;
+    const html = await res.text();
+    const node = document.getElementById('progress');
+    node.outerHTML = html;
+    const status = document.getElementById('progress').dataset.status;
+    if (status === 'ready' || status === 'failed') {
+      clearInterval(poll);
+      location.reload();
+    }
+  }, 3000);
+</script>
+{% endblock %}

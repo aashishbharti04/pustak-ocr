@@ -1,0 +1,9 @@
+<div id="progress" data-status="{{ book.status }}">
+  <div class="bar"><span style="width: {{ (progress.ocred / progress.total * 100) if progress.total else 0 }}%"></span></div>
+  <p class="muted">
+    Status <strong>{{ book.status }}</strong> &middot;
+    OCR {{ progress.ocred }} / {{ progress.total or book.page_count }} &middot;
+    reviewed {{ progress.reviewed }}
+  </p>
+  {% if book.error %}<pre class="alert error">{{ book.error }}</pre>{% endif %}
+</div>

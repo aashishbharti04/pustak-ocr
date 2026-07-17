@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "pustak",
+      "runtimeExecutable": ".venv\\Scripts\\python.exe",
+      "runtimeArgs": ["-m", "uvicorn", "pustak_ocr.app:app", "--reload", "--port", "8077"],
+      "port": 8077
+    }
+  ]
+}

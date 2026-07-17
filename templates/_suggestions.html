@@ -1,0 +1,42 @@
+{% if error %}
+  <p class="alert error">{{ error }}</p>
+{% elif result is none %}
+  <p class="muted">Not checked yet.</p>
+{% elif not result.get('suggestions') %}
+  <p class="muted">Claude read the scan and found nothing to flag on this page.</p>
+  {% if result.get('dropped') %}
+    <p class="muted small">({{ result.get('dropped') }} unanchored suggestion(s) discarded.)</p>
+  {% endif %}
+{% else %}
+  {# Read every field with .get — a stored row written by an older version, or a
+     partially-populated one, must not take the whole review page down. #}
+  <ul class="suggestions">
+    {% for s in result.suggestions %}
+      {% set conf = s.get('confidence', 'low') %}
+      {% set hits = s.get('occurrences', 1) %}
+      <li class="sugg {{ conf }}"
+          data-original="{{ s.get('original', '') }}" data-corrected="{{ s.get('corrected', '') }}">
+        <div class="sugg-diff">
+          <span class="was">{{ s.get('original', '') }}</span>
+          <span class="arrow">&rarr;</span>
+          <span class="now">{{ s.get('corrected', '') }}</span>
+        </div>
+        <div class="sugg-meta">
+          <span class="badge {{ conf }}">{{ conf }}</span>
+          <span class="muted">{{ s.get('reason', '') }}</span>
+          {% if hits > 1 %}
+            <span class="muted">&middot; {{ hits }}&times; on page</span>
+          {% endif %}
+        </div>
+        <div class="sugg-actions">
+          <button type="button" class="tiny apply">Apply</button>
+          <button type="button" class="tiny ghost dismiss">Dismiss</button>
+        </div>
+      </li>
+    {% endfor %}
+  </ul>
+  <p class="muted small">
+    Suggestions only &mdash; nothing is changed until you click Apply.
+    {% if result.get('dropped') %}{{ result.get('dropped') }} discarded as unanchored.{% endif %}
+  </p>
+{% endif %}

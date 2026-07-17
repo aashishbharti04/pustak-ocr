@@ -1,0 +1,191 @@
+{% extends "base.html" %}
+{% block title %}p.{{ page.page_number }} — {{ book.title }}{% endblock %}
+{% block main_class %}review{% endblock %}
+
+{% block topbar %}
+<div class="topbar-right">
+  <span class="muted">{{ book.title }}</span>
+  <span class="counter">p. {{ page.page_number }} / {{ book.page_count }}</span>
+  {% if page.ocr_confidence is not none %}
+    <span class="badge {% if page.ocr_confidence < low_conf %}warn{% endif %}">
+      {{ page.ocr_confidence }}%
+    </span>
+  {% endif %}
+  <span class="muted">{{ progress.reviewed }} reviewed</span>
+  <span id="savestate" class="savestate">saved</span>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="pane image-pane">
+  <div class="pane-tools">
+    <button type="button" data-zoom="out">−</button>
+    <button type="button" data-zoom="in">+</button>
+    <button type="button" data-zoom="fit">Fit</button>
+  </div>
+  <div class="scan" id="scan">
+    <img id="scanimg" src="/books/{{ book.id }}/pages/{{ page.page_number }}/image" alt="Page {{ page.page_number }}">
+  </div>
+</div>
+
+<div class="pane text-pane">
+  <label class="chapter">
+    Chapter starts here:
+    <input id="chapter" value="{{ chapter_title }}" placeholder="leave blank if not a chapter start">
+  </label>
+  <textarea id="editor" spellcheck="false" lang="hi">{{ text }}</textarea>
+
+  <details class="ai" {% if stored_suggestions and stored_suggestions.suggestions %}open{% endif %}>
+    <summary>
+      Claude check
+      <button type="button" id="runai" class="tiny">Check this page</button>
+      <span id="aistate" class="muted small"></span>
+    </summary>
+    <div id="suggestions">
+      {% with result = stored_suggestions, error = None %}
+        {% include "_suggestions.html" %}
+      {% endwith %}
+    </div>
+  </details>
+
+  <div class="pane-foot">
+    <a class="button ghost {% if not has_prev %}disabled{% endif %}"
+       href="{% if has_prev %}/books/{{ book.id }}/pages/{{ page.page_number - 1 }}{% else %}#{% endif %}">← Prev</a>
+    <button type="button" id="savenext" class="button">Save &amp; next →</button>
+    <a class="button ghost" href="/books/{{ book.id }}">All pages</a>
+    <span class="muted keys">Ctrl+S save · Ctrl+Enter save &amp; next · Alt+←/→ move</span>
+  </div>
+</div>
+
+<script>
+  const pageId   = {{ page.id }};
+  const bookId   = {{ book.id }};
+  const pageNo   = {{ page.page_number }};
+  const hasNext  = {{ 'true' if has_next else 'false' }};
+  const hasPrev  = {{ 'true' if has_prev else 'false' }};
+
+  const editor    = document.getElementById('editor');
+  const chapter   = document.getElementById('chapter');
+  const saveState = document.getElementById('savestate');
+
+  let dirty = false;
+  let timer = null;
+
+  function mark(state) {
+    saveState.textContent = state;
+    saveState.className = 'savestate ' + state.replace(/[^a-z]/g, '');
+  }
+
+  async function save(reviewed = false) {
+    const body = new URLSearchParams();
+    body.set('text', editor.value);
+    body.set('reviewed', reviewed ? 'true' : 'false');
+    mark('saving');
+    const res = await fetch(`/pages/${pageId}/save`, { method: 'POST', body });
+    if (res.ok) { dirty = false; mark('saved'); } else { mark('error'); }
+    return res.ok;
+  }
+
+  async function saveChapter() {
+    const body = new URLSearchParams();
+    body.set('title', chapter.value);
+    await fetch(`/books/${bookId}/pages/${pageNo}/chapter`, { method: 'POST', body });
+  }
+
+  function go(n) { location.href = `/books/${bookId}/pages/${n}`; }
+
+  editor.addEventListener('input', () => {
+    dirty = true;
+    mark('unsaved');
+    clearTimeout(timer);
+    timer = setTimeout(() => save(false), 1000);
+  });
+
+  chapter.addEventListener('change', saveChapter);
+
+  document.getElementById('savenext').addEventListener('click', async () => {
+    clearTimeout(timer);
+    await saveChapter();
+    if (await save(true) && hasNext) go(pageNo + 1);
+  });
+
+  document.addEventListener('keydown', async (e) => {
+    if (e.ctrlKey && e.key === 's') {
+      e.preventDefault(); clearTimeout(timer); await save(false);
+    } else if (e.ctrlKey && e.key === 'Enter') {
+      e.preventDefault(); clearTimeout(timer);
+      await saveChapter();
+      if (await save(true) && hasNext) go(pageNo + 1);
+    } else if (e.altKey && e.key === 'ArrowRight' && hasNext) {
+      e.preventDefault(); clearTimeout(timer); await save(false); go(pageNo + 1);
+    } else if (e.altKey && e.key === 'ArrowLeft' && hasPrev) {
+      e.preventDefault(); clearTimeout(timer); await save(false); go(pageNo - 1);
+    }
+  });
+
+  window.addEventListener('beforeunload', (e) => {
+    if (dirty) { e.preventDefault(); e.returnValue = ''; }
+  });
+
+  // --- Claude suggestions -------------------------------------------------
+  // Apply is a literal string replace of a span we already verified exists in the
+  // text server-side. Nothing here rewrites the page wholesale, and every edit
+  // lands in the editor where you can still undo it before saving.
+  const aiState = document.getElementById('aistate');
+  const suggBox = document.getElementById('suggestions');
+
+  function wireSuggestions() {
+    suggBox.querySelectorAll('.sugg').forEach(li => {
+      const original = li.dataset.original;
+      const corrected = li.dataset.corrected;
+
+      li.querySelector('.apply')?.addEventListener('click', () => {
+        if (!editor.value.includes(original)) {
+          li.classList.add('stale');
+          li.querySelector('.sugg-meta').insertAdjacentHTML(
+            'beforeend', ' <span class="warn-text">no longer in text</span>');
+          return;
+        }
+        editor.value = editor.value.split(original).join(corrected);
+        editor.dispatchEvent(new Event('input', { bubbles: true }));
+        li.classList.add('applied');
+      });
+
+      li.querySelector('.dismiss')?.addEventListener('click', () => li.classList.add('dismissed'));
+    });
+  }
+
+  document.getElementById('runai').addEventListener('click', async (e) => {
+    e.preventDefault();
+    clearTimeout(timer);
+    if (dirty) await save(false);          // check what's on screen, not a stale copy
+    aiState.textContent = 'reading the scan…';
+    try {
+      const res = await fetch(`/pages/${pageId}/suggest`, { method: 'POST' });
+      suggBox.innerHTML = await res.text();
+      aiState.textContent = '';
+      wireSuggestions();
+    } catch (err) {
+      aiState.textContent = 'failed';
+    }
+  });
+
+  wireSuggestions();
+
+  // Zoom: width-based so the page reflows in the scroller rather than overflowing.
+  const img = document.getElementById('scanimg');
+  let zoom = 100;
+  function applyZoom() { img.style.width = zoom + '%'; }
+  document.querySelectorAll('[data-zoom]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const mode = btn.dataset.zoom;
+      if (mode === 'in') zoom = Math.min(zoom + 25, 400);
+      else if (mode === 'out') zoom = Math.max(zoom - 25, 50);
+      else zoom = 100;
+      applyZoom();
+    });
+  });
+  applyZoom();
+  editor.focus();
+</script>
+{% endblock %}

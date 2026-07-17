@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block content %}
+
+{% if tesseract_error %}
+  <div class="alert error">
+    <strong>OCR engine not ready.</strong>
+    <p>{{ tesseract_error }}</p>
+    <p class="muted">You can still upload — pages will render, and OCR resumes once Tesseract is
+      installed and you hit Retry.</p>
+  </div>
+{% else %}
+  <p class="muted">Tesseract {{ tesseract_version }} ready.</p>
+{% endif %}
+
+<section class="card">
+  <h2>Add a book</h2>
+  <form method="post" action="/books" enctype="multipart/form-data" class="stack">
+    <label>Title <input name="title" required placeholder="किताब का नाम"></label>
+    <label>Author <input name="author" placeholder="optional"></label>
+    <label>Scanned PDF <input type="file" name="pdf" accept="application/pdf" required></label>
+    <label class="check">
+      <input type="checkbox" name="binarize" value="true">
+      Force binarization <span class="muted">(only for bad scans — usually hurts Devanagari)</span>
+    </label>
+    <button type="submit">Upload &amp; start OCR</button>
+  </form>
+</section>
+
+<section>
+  <h2>Books</h2>
+  {% if not books %}
+    <p class="muted">Nothing yet.</p>
+  {% else %}
+    <table class="books">
+      <thead><tr><th>Title</th><th>Status</th><th>Reviewed</th><th></th></tr></thead>
+      <tbody>
+      {% for b in books %}
+        <tr>
+          <td><a href="/books/{{ b.id }}">{{ b.title }}</a>
+            {% if b.author %}<span class="muted">— {{ b.author }}</span>{% endif %}</td>
+          <td><span class="badge {{ b.status }}">{{ b.status }}</span></td>
+          <td>{{ b.reviewed_count }} / {{ b.page_count }}</td>
+          <td><a href="/books/{{ b.id }}/export.docx">DOCX</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+</section>
+{% endblock %}
